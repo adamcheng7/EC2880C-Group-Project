@@ -1,0 +1,207 @@
+---
+title: "EC2880C Group Project Data Analysis"
+author: "Adam Cheng"
+bibliography: https://raw.githubusercontent.com/adamcheng7/EC2880C-Group-Project/refs/heads/main/syntax/data_analysis/bibliography/data_analysis_citations.bib
+csl: https://raw.githubusercontent.com/adamcheng7/EC2880C-Group-Project/refs/heads/main/syntax/data_analysis/bibliography/apa_6th_edition.csl
+format:
+    html:
+      theme: cosmo
+      fontsize: 14px
+      page-layout: article
+      html-math-method: mathml
+      code-overflow: wrap
+      grid:
+        sidebar-width: 250px
+        body-width: 950px
+        margin-width: 250px
+        gutter-width: 1.5rem
+      code-links:
+      - text: Project Repository
+        icon: github
+        href: https://github.com/adamcheng7/EC2880C-Group-Project
+      number-sections: true
+      toc: true
+      toc-expand: true
+      toc-location: left
+      df-print: paged
+      code-fold: false
+      self-contained: true
+execute:
+  echo: true
+  warning: false
+  message: false
+editor: visual
+---
+
+# Introduction
+
+This document aims to produce a line plot graphic comparing the annual export growth rate of Argentina to the annual average $E_{ARS/USD}$ (ARS=X) exchange rate between 1990-2005.
+
+# Loading R Packages
+
+```{r}
+#| label: loading_packages
+#| output: false
+
+# List of necessary packages
+packages <- c("rlang",
+              "tidyverse",
+              "repr",
+              "janitor",
+              "haven",
+              "patchwork"
+              )
+
+# Install packages that are not installed
+new_packages <- packages[!(packages %in% installed.packages()[,"Package"])]
+if(length(new_packages) > 0) install.packages(new_packages)
+
+# Loading the necessary R packages
+library(rlang)
+library(tidyverse)
+library(repr)
+library(janitor)
+library(haven)
+library(patchwork)
+
+# Setting seed for reproducibility
+set.seed(2025)
+
+# Disabling scientific notations
+options(scipen = 999)
+```
+
+# Reading Datasets
+
+```{r}
+#| label: reading_data
+
+# Reading World Bank data
+export_data_url <- "https://raw.githubusercontent.com/adamcheng7/EC2880C-Group-Project/refs/heads/main/data/arg_export_wb.csv"
+export_data <- read_csv(export_data_url) |> slice(1)
+
+export_data
+
+# Reading IMF data
+exchange_data_url <- "https://raw.githubusercontent.com/adamcheng7/EC2880C-Group-Project/refs/heads/main/data/arg_ars-usd_imf.csv"
+exchange_data <- read_csv(exchange_data_url)
+
+exchange_data
+```
+
+# Wrangling and Cleaning Datasets
+
+## Wrangling and Cleaning International Monetary Fund (IMF) Data
+
+Source: @imf
+
+```{r}
+#| label: cleaning_imf
+
+# Renaming and selecting necessary columns
+exchange_wrangled <- exchange_data |>
+  rename("country_name"="COUNTRY",
+         "year"="TIME_PERIOD",
+         "ars_usd"="OBS_VALUE") |>
+  select(country_name,year,ars_usd)
+
+# Filtering year range to 1990-2005
+exchange_cleaned <- exchange_wrangled |>
+  filter(year >= 1990 & year <= 2005)
+
+exchange_cleaned
+```
+
+## Wrangling and Cleaning World Bank (WB) Data
+
+Source: @wb
+
+```{r}
+#| label: cleaning_wb
+
+export_wrangled <- export_data |>
+  clean_names() |>
+  pivot_longer(cols = x1960_yr1960:x2024_yr2024, names_to = "year", values_to = "value") |> # Pivot dataset to long format
+  mutate(year = as.numeric(str_extract(year, "\\d{4}"))) |> # Extracts the 4-digit year number from the original dataset's incompatible year format
+  select(country_name, year, value)|>
+  rename("export_growth"="value")
+
+# Filtering year range to 1990-2005
+export_cleaned <- export_wrangled |>
+  filter(year >= 1990 & year <= 2005)
+
+export_cleaned
+```
+
+# Merging Datasets
+
+```{r}
+#| label: merging_data
+
+# Joining datasets by year and country
+complete_dataset <- full_join(export_cleaned, exchange_cleaned,
+                              by = c("country_name","year"))
+
+complete_dataset
+```
+
+# Producing Graphics
+
+## Argentina's Annual $E_{ARS/USD}$ Average vs. Annual Export Growth Rate (Line Plot)
+
+```{r}
+#| label: fig-export_exchange
+#| fig-width: 8
+#| fig-height: 9
+#| fig-cap: "Argentina's annual export growth rate and ARS/USD exchange rate between 1990 - 2005"
+
+# Producing line plot
+
+## Export plot (top)
+export_plot <- complete_dataset |>
+  ggplot(aes(x = year, y = export_growth)) +
+  geom_line() +
+  geom_point() +
+  geom_vline(xintercept = 1992, linetype = "dashed", color = "#004488") +
+  geom_vline(xintercept = 1995, linetype = "dashed", color = "#DDAA33") +
+  geom_vline(xintercept = 2002, linetype = "dashed", color = "#BB5566") +
+  scale_x_continuous(breaks = seq(1990, 2006, by = 2)) +
+  labs(y = "Export Growth Rate (Annual %)", x = "Year", title = "Argentina's annual export growth rate and ARS/USD exchange rate between 1990 - 2005")
+
+## Exchange rate plot (bottom)
+exchange_plot <- complete_dataset |>
+  ggplot(aes(x = year, y = ars_usd)) +
+  geom_line() +
+  geom_point() +
+  geom_vline(aes(xintercept = 1992, color = factor("Convertibility Plan", 
+                                                   levels = c("Convertibility Plan", 
+                                                              "Mexican Peso Devaluation", 
+                                                              "Convertibility Plan Abandoned"))), 
+             linetype = "dashed") +
+  geom_vline(aes(xintercept = 1995, color = factor("Mexican Peso Devaluation", 
+                                                   levels = c("Convertibility Plan", 
+                                                              "Mexican Peso Devaluation", 
+                                                              "Convertibility Plan Abandoned"))), 
+             linetype = "dashed") +
+  geom_vline(aes(xintercept = 2002, color = factor("Convertibility Plan Abandoned", 
+                                                   levels = c("Convertibility Plan", 
+                                                              "Mexican Peso Devaluation", 
+                                                              "Convertibility Plan Abandoned"))), 
+             linetype = "dashed") +
+  scale_color_manual(name = "Events", 
+                     values = c("Convertibility Plan" = "#004488",
+                                "Mexican Peso Devaluation" = "#DDAA33",
+                                "Convertibility Plan Abandoned" = "#BB5566")) +
+  scale_x_continuous(breaks = seq(1990, 2006, by = 2)) +
+  theme(legend.position = "bottom") +
+  labs(y = "ARS per unit of USD", x = "Year")
+
+## Combining plots
+combined_plot <- export_plot / exchange_plot
+
+combined_plot
+
+# Uncomment to save plot as a png
+
+# ggsave("arg_export_exchange_plot.png", plot = combined_plot)
+```
